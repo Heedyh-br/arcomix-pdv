@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: arcomix-pdv-backend
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install && npm run build
+    startCommand: npm run start:prod
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DB_SYNCHRONIZE
+        value: "true"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 8h
+      - key: DATABASE_URL
+        sync: false # cole aqui a connection string do Neon depois de criar o serviço
