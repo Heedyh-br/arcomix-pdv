@@ -37,7 +37,7 @@ export class Venda {
   trocoCentavos: number | null;
 
   // RF10 - preenchidos quando uma venda já finalizada é cancelada por Supervisor.
-  @Column({ name: 'cancelada_por', nullable: true })
+  @Column({ name: 'cancelada_por', type: 'varchar', nullable: true })
   canceladaPor: string | null;
 
   @Column({ name: 'motivo_cancelamento', type: 'text', nullable: true })

@@ -14,7 +14,7 @@ export class Desconto {
   vendaId: string;
 
   // Nulo = desconto aplicado sobre o total da venda, não sobre um item específico.
-  @Column({ name: 'item_venda_id', nullable: true })
+  @Column({ name: 'item_venda_id', type: 'varchar', nullable: true })
   itemVendaId: string | null;
 
   @Column({ name: 'valor_centavos', type: 'int' })
@@ -24,7 +24,7 @@ export class Desconto {
   percentual: number | null;
 
   // Preenchido só quando o desconto passou do limite padrão do Operador.
-  @Column({ name: 'autorizado_por', nullable: true })
+  @Column({ name: 'autorizado_por', type: 'varchar', nullable: true })
   autorizadoPor: string | null;
 
   @Column({ type: 'text', nullable: true })
