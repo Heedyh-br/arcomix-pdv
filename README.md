@@ -4,17 +4,13 @@ Sistema de **Ponto de Venda (PDV) para caixa de mercado**, com API em NestJS e i
 
 O projeto nasceu de uma **especificação de requisitos (ERS)** com 14 requisitos funcionais e 8 não funcionais, e cada módulo do código aponta para o requisito que ele atende.
 
-<!-- TODO: troque pelos links reais -->
-**Demo:** _(adicione o link do Netlify aqui)_ · **API:** _(adicione o link do Render aqui)_
+
+
 
 > A API roda no plano gratuito do Render, que "dorme" após ~15 min sem uso. O primeiro acesso pode levar de 30 a 50 segundos.
 
 ## Telas
 
-<!-- TODO: capture e salve em docs/ -->
-| Login | Abertura de caixa | Fechamento de caixa |
-|---|---|---|
-| ![Login](docs/login.png) | ![Abertura](docs/abertura-caixa.png) | ![Fechamento](docs/fechamento-caixa.png) |
 
 ## Status do projeto
 
