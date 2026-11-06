@@ -9,8 +9,6 @@ O projeto nasceu de uma **especificação de requisitos (ERS)** com 14 requisito
 
 > A API roda no plano gratuito do Render, que "dorme" após ~15 min sem uso. O primeiro acesso pode levar de 30 a 50 segundos.
 
-## Telas
-
 
 ## Status do projeto
 
