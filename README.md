@@ -1,127 +1,167 @@
 # Arcomix PDV
 
-Sistema de PDV para caixa de mercado. Backend (NestJS) e frontend (React) completos,
-módulos (a) a (g) implementados. Compilação verificada (`nest build` e `vite build`
-rodam sem erro).
+Sistema de **Ponto de Venda (PDV) para caixa de mercado**, com API em NestJS e interface em React. Cobre o ciclo de um turno de caixa: login por perfil, abertura de caixa com fundo de troco, venda (por código de barras, manual ou por peso), pagamento misto, descontos e cancelamentos com autorização de supervisor, fechamento com conferência e relatórios.
+
+O projeto nasceu de uma **especificação de requisitos (ERS)** com 14 requisitos funcionais e 8 não funcionais, e cada módulo do código aponta para o requisito que ele atende.
+
+<!-- TODO: troque pelos links reais -->
+**Demo:** _(adicione o link do Netlify aqui)_ · **API:** _(adicione o link do Render aqui)_
+
+> A API roda no plano gratuito do Render, que "dorme" após ~15 min sem uso. O primeiro acesso pode levar de 30 a 50 segundos.
+
+## Telas
+
+<!-- TODO: capture e salve em docs/ -->
+| Login | Abertura de caixa | Fechamento de caixa |
+|---|---|---|
+| ![Login](docs/login.png) | ![Abertura](docs/abertura-caixa.png) | ![Fechamento](docs/fechamento-caixa.png) |
+
+## Status do projeto
+
+| Parte | Estado |
+|---|---|
+| API (auth, produtos, caixa, vendas, descontos, cancelamentos, relatórios) | Completa |
+| Interface: login, abertura de caixa, tela do turno, fechamento e resumo | Pronta |
+| Interface: venda, cadastro de produtos e relatórios | Em desenvolvimento (a API já existe) |
+| Modo offline (RNF02) | Planejado |
+| Integração fiscal e de hardware reais | Fora do escopo (há simulação e mocks) |
+
+## Funcionalidades
+
+**Perfis e segurança**
+- Login com JWT (expira em 8h por padrão) e senhas com hash `bcrypt`
+- Três perfis (Operador, Supervisor, Administrador) com controle de acesso por rota
+- Log de auditoria para ações sensíveis
+
+**Caixa**
+- Abertura com fundo de troco, vinculada ao operador; bloqueia dois caixas abertos para o mesmo operador
+- Fechamento comparando o valor contado com o registrado, com divergência por forma de pagamento (dinheiro, débito, crédito e Pix)
+
+**Vendas**
+- Busca de produto por código de barras ou inserção manual
+- Venda por peso (peso × preço/kg)
+- Cancelamento de item antes do pagamento, com total recalculado
+- Pagamento misto (vários pagamentos na mesma venda); troco calculado só para dinheiro
+- Cupom fiscal simulado, com campos equivalentes a NFC-e/SAT
+- Venda persistida desde o primeiro item, podendo ser recuperada após queda do app
+
+**Autorização de supervisor**
+- Desconto acima do limite configurável exige login e senha de um Supervisor
+- Cancelamento de venda finalizada exige Supervisor e respeita um prazo configurável
+- Limite de desconto (padrão 10%) e prazo de cancelamento (padrão 2h) ficam na tabela `configuracoes_sistema`, editável só pelo Administrador
+
+**Relatórios** (Supervisor e Administrador)
+- Por caixa e por período, segmentados por forma de pagamento
 
 ## Stack
-- **Backend:** NestJS + TypeScript + TypeORM + PostgreSQL
-- **Frontend:** React + TypeScript + Vite + Tailwind CSS
-- **Auth:** JWT (Passport) + RBAC por perfil (Operador / Supervisor / Administrador)
 
-## Como rodar local
+| Camada | Tecnologias |
+|---|---|
+| Backend | NestJS 10, TypeScript, TypeORM, PostgreSQL, Passport (JWT), bcrypt, class-validator |
+| Frontend | React 18, TypeScript, Vite, Tailwind CSS, Axios |
+| Deploy | Render (API), Neon (PostgreSQL), Netlify (frontend) |
 
-### Backend
+## Arquitetura
+
+```
+React (Netlify)  ──HTTP/JSON──▶  NestJS API (Render)  ──TypeORM──▶  PostgreSQL (Neon)
+                                   ├─ auth / users (JWT + perfis)
+                                   ├─ produtos · caixa · vendas
+                                   ├─ configuracao · auditoria · relatorios
+                                   └─ hardware (interfaces + mocks)
+```
+
+**Banco de dados:** PostgreSQL com 10 entidades: `usuarios`, `produtos`, `caixas`, `vendas`, `itens_venda`, `pagamentos`, `cupons_fiscais`, `descontos`, `configuracoes_sistema` e `logs_auditoria`.
+
+**Decisões de projeto**
+- **Valores monetários em centavos (inteiros)**, para evitar erro de arredondamento com ponto flutuante.
+- **Hardware abstraído por interfaces** (leitor de código de barras, balança, impressora fiscal e gaveta). Hoje há mocks; para integrar um dispositivo real basta trocar a implementação no `hardware.module.ts`.
+- **Regras de negócio configuráveis no banco**, e não fixas no código.
+- **Persistência imediata** de itens e pagamentos, para a venda sobreviver a uma queda.
+
+## Como rodar localmente
+
+**Pré-requisitos:** Node.js 18+ e PostgreSQL.
+
+### 1. Banco
+
+Crie um banco vazio, por exemplo `arcomix_pdv`.
+
+### 2. Backend
+
 ```bash
 cd backend
-cp .env.example .env   # ajuste host/usuário/senha do Postgres
+cp .env.example .env
 npm install
 npm run start:dev
 ```
-Cria as tabelas automaticamente (`synchronize`, só em dev). O primeiro Administrador
-precisa ser inserido direto no banco (o endpoint `POST /usuarios` já exige um
-Administrador logado pra criar os demais).
 
-### Frontend
+No `.env`, para usar o Postgres local, **comente a linha `DATABASE_URL`** (ela é usada só em produção) e ajuste `DB_HOST`, `DB_USER`, `DB_PASSWORD` e `DB_NAME`. Defina também um `JWT_SECRET` próprio. A API sobe em `http://localhost:3000` e cria as tabelas sozinha (`DB_SYNCHRONIZE=true`).
+
+### 3. Primeiro usuário administrador
+
+O endpoint `POST /usuarios` exige um Administrador logado, então o primeiro é criado direto no banco. Gere o hash da senha (dentro de `backend/`):
+
+```bash
+node -e "console.log(require('bcrypt').hashSync('SUA_SENHA', 10))"
+```
+
+E insira o usuário:
+
+```sql
+INSERT INTO usuarios (nome, login, senha_hash, perfil)
+VALUES ('Administrador', 'admin', '<hash gerado acima>', 'administrador');
+```
+
+Depois faça login e crie os demais usuários pela API.
+
+### 4. Frontend
+
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
-Crie um `.env` com `VITE_API_URL=http://localhost:3000` se o backend não estiver na
-porta padrão.
 
-## Cobertura de RF/RNF por módulo
+Se a API não estiver em `localhost:3000`, crie `frontend/.env` com `VITE_API_URL=<url da API>`.
 
-**(a) Autenticação e perfis** — `src/auth`, `src/users`
-RNF03 (login/senha, JWT, perfis, guards reutilizáveis). Base pra RF10/RF11
-(`AuthService.validarSupervisor`).
+## Variáveis de ambiente (backend)
 
-**(b) Cadastro de produtos** — `src/produtos`
-RF12 (CRUD com código de barras único), RF13 (consulta de estoque).
+| Variável | Descrição |
+|---|---|
+| `DATABASE_URL` | Connection string do Postgres (produção). Se definida, ignora as `DB_*` |
+| `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` | Conexão local |
+| `DB_SYNCHRONIZE` | `true` cria as tabelas automaticamente |
+| `JWT_SECRET` | Segredo de assinatura dos tokens |
+| `JWT_EXPIRES_IN` | Validade do token (padrão `8h`) |
+| `PORT` | Porta da API (padrão `3000`) |
 
-**(c) Abertura de caixa** — `src/caixa`
-RF08 (abre com fundo de troco, operador, data/hora; bloqueia caixa duplicado).
+## Endpoints principais
 
-**(d) Fluxo de venda** — `src/vendas`, `src/hardware`
-RF01 (busca por código de barras), RF02 (inserção manual), RF03 (venda por peso,
-`peso × preço/kg`), RF04 (cancelar item antes do pagamento), RF05 (total/troco
-automáticos, troco só em dinheiro), RF06 (pagamento misto — N pagamentos por
-venda), RF07 (cupom fiscal simulado, campos equivalentes a NFC-e/SAT — RNF04).
-RNF01 (busca de produto é O(1) por índice único de código de barras). RNF05
-(cada item/pagamento é persistido na hora — venda recuperável via
-`GET /vendas/em-andamento`). RNF07 (leitor, balança, impressora e gaveta são
-interfaces em `src/hardware`, com mocks — troque só o `provide: useClass` no
-`hardware.module.ts` quando integrar hardware real).
+| Método e rota | Perfil | Descrição |
+|---|---|---|
+| `POST /auth/login` | público | Login, retorna JWT |
+| `POST /usuarios` · `GET /usuarios` · `DELETE /usuarios/:id` | Administrador | Gestão de usuários |
+| `GET /produtos` · `GET /produtos/codigo-barras/:codigo` | autenticado | Consulta de produtos |
+| `POST /produtos` · `PATCH /produtos/:id` | Supervisor, Administrador | Cadastro e edição |
+| `POST /caixas/abrir` · `GET /caixas/aberto` · `POST /caixas/:id/fechar` | autenticado | Ciclo do caixa |
+| `POST /vendas` · `GET /vendas/em-andamento` | autenticado | Inicia e recupera venda |
+| `POST /vendas/:id/itens` · `DELETE /vendas/:id/itens/:itemId` | autenticado | Itens da venda |
+| `POST /vendas/:id/descontos` · `POST /vendas/:id/pagamentos` | autenticado | Desconto e pagamento |
+| `POST /vendas/:id/cancelar-finalizada` | exige senha de Supervisor | Cancela venda concluída |
+| `GET /relatorios/caixa/:id` · `GET /relatorios/periodo` | Supervisor, Administrador | Relatórios |
+| `GET /configuracoes` · `PUT /configuracoes/:chave` | Administrador | Regras configuráveis |
 
-**(e) Fechamento de caixa** — `src/caixa`
-RF09 (compara valores contados x registrados, calcula divergência por forma de
-pagamento).
+## Limitações conhecidas e próximos passos
 
-**(f) Cancelamentos e descontos com autorização de supervisor** — dentro de
-`src/vendas/vendas.service.ts`
-RF10 (`cancelarVendaFinalizada` — exige login/senha de Supervisor, respeita prazo
-configurável), RF11 (`aplicarDesconto` — acima do limite configurável, exige
-Supervisor). RNF08 (ambos geram log em `src/auditoria`).
+- Telas de venda, cadastro de produtos e relatórios no frontend
+- Modo offline com fila local (IndexedDB) e sincronização ao reconectar
+- Trocar `synchronize` por migrations do TypeORM
+- Restringir o CORS à origem do frontend (hoje está liberado)
+- Testes automatizados
+- Integração fiscal real (SEFAZ, certificado digital) e com hardware físico
 
-**(g) Relatórios** — `src/relatorios`
-RF14 (por caixa e por período, segmentado por forma de pagamento; só
-Supervisor/Administrador).
+## Autor
 
-## O que ficou como [Suposição] configurável (não fixo no código)
-Tabela `configuracoes_sistema` (`src/configuracao`), editável só por Administrador:
-- `limite_desconto_percentual` (padrão 10%)
-- `prazo_cancelamento_horas` (padrão 2h)
-
-## Requisitos NÃO totalmente implementados (e por quê)
-- **RNF02 (offline até 4h):** o padrão está desenhado (persistência imediata a
-  cada alteração + endpoint idempotente seria o próximo passo), mas a fila local
-  em IndexedDB e a sincronização automática ao reconectar no frontend ainda não
-  foram implementadas nesta entrega — depende de mais uma rodada de trabalho no
-  front dedicada a isso.
-- **RNF04 (fiscal real):** o cupom simulado tem os campos equivalentes a uma
-  NFC-e/SAT, mas não há integração real com SEFAZ nem homologação fiscal —
-  isso depende de certificado digital e credenciamento, fora do escopo de código.
-- **RNF07 (hardware real):** só os mocks estão implementados; leitor/balança/
-  impressora/gaveta físicos exigem os drivers/SDKs do fabricante.
-- **Telas de frontend:** login, tela pós-login e o design system (cores/tipografia)
-  estão prontos; as telas de cadastro de produto, caixa, venda e relatórios ainda
-  são só API — a UI dessas ainda não foi construída.
-
-## Deploy no Netlify — leitura importante
-Netlify serve muito bem o **frontend** (é só apontar `frontend/` como base, ele já
-lê o `netlify.toml` incluso). O **backend NestJS não roda bem no Netlify**: Netlify
-não hospeda servidor Node persistente, só funções serverless (stateless, com
-timeout curto) — e este backend usa pool de conexão com Postgres via TypeORM, JWT
-com sessão de até 8h e transações, o que não combina bem com esse modelo. Serviços
-como Render, Railway ou Fly.io rodam o backend como está, sem adaptar nada. Depois
-de subir o backend em um desses, é só apontar `VITE_API_URL` (nas variáveis de
-ambiente do site no Netlify) pra URL pública dele.
-
-## Rodando de graça (sem cartão de crédito)
-
-**1. Banco — Neon (Postgres free, não expira)**
-- Crie conta em neon.tech, crie um projeto.
-- Copie a "Connection String" (pooled connection).
-
-**2. Backend — Render (free web service)**
-- Suba este projeto pro GitHub (repositório pode ser privado).
-- No Render: New > Blueprint > aponte pro repositório. Ele lê o `render.yaml`
-  da raiz automaticamente e já configura tudo.
-- Depois de criado, vá em Environment e cole a connection string do Neon na
-  variável `DATABASE_URL`.
-- Free tier "dorme" depois de ~15 min sem acesso — o primeiro request depois
-  disso demora uns 30-50s pra responder. Normal, não é bug.
-
-**3. Frontend — Netlify (free)**
-- No Netlify: Add new site > Import from Git > selecione o repositório,
-  **Base directory: `frontend`** (ele já lê o `netlify.toml` de lá).
-- Em Site settings > Environment variables, adicione `VITE_API_URL` com a URL
-  pública que o Render deu ao backend (algo como
-  `https://arcomix-pdv-backend.onrender.com`).
-- Redeploy.
-
-Terminada essa configuração, tanto o "acordar" do backend quanto o app em si
-ficam 100% grátis nesses três provedores — só fique de olho se algum deles
-mudar a política de free tier (isso muda com frequência e eu não tenho busca
-na web ativada agora pra confirmar em tempo real).
+**Edivaldo Pereira dos Santos Júnior** · estudante de Ciência de Dados e Análise e Desenvolvimento de Sistemas · Recife, PE
+<!-- TODO: adicione seu LinkedIn e e-mail -->
